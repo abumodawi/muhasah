@@ -105,6 +105,7 @@ main{padding-bottom:34px}
 @media (max-width:560px){.top{padding:12px 16px 0}.top img{height:56px}h1.ttl{font-size:1.7rem}.fnm{font-size:2.1rem}.ft{padding:44px 20px 36px}}
 @media print{.ft{display:none}body{background-image:none}th{background:#e9f0f6!important;color:#000}.c{box-shadow:none;border:1px solid #bbb}}
 @media (min-width:700px){html{font-size:14.5px}h1.ttl{font-size:1.9rem!important}.c b{font-size:1rem!important}table{font-size:.8rem!important}.fnm{font-size:1.9rem!important}.fr{font-size:1.05rem!important}.fp{font-size:.88rem!important}.fc{font-size:.82rem!important}.home button{font-size:1rem}}
+@media print{#mws,#pnote{display:none!important}}
 </style>
 </head>
 <body>
@@ -158,26 +159,28 @@ const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(orders))}catch(e)
 const dig=s=>String(s??'').replace(/[٠-٩]/g,c=>c.charCodeAt(0)-1632).replace(/[۰-۹]/g,c=>c.charCodeAt(0)-1776).replace(/٫/g,'.').replace(/٬/g,',');
 const esc=s=>dig(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=n=>(+n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const LB={'ممتاز':'له حق الأولوية','عادي':'دين عادي','مستبعد':'مستبعد','جرد':'يحتاج جرد','بلاحجز':'مستبعد'};
+const LB={'ممتاز':'له حق الأولوية','عادي':'دين عادي','مستبعد':'مستبعد','جرد':'يحتاج جرد','بلاحجز':'مستبعد','منتهي':'مستبعد - منتهي بالتحصيل'};
 const fmtRaw=n=>{n=Math.round((+n||0)*100)/100;return Number.isInteger(n)?String(n):n.toFixed(2)};
 const R37='تاريخ السند بعد أقدم تاريخ حجز — المادة ٣٧ من النظام';
 
+const isFin=o=>o.rem!==''&&o.rem!=null&&+o.rem===0;
 const isNS=o=>!!o.noSeiz&&!o.seiz, isPN=o=>!isNS(o)&&!!o.need&&missing(o).length>0;
 function compute(){
-  const act=orders.filter(o=>!isPN(o)).sort((a,b)=>(a.ref||'9999').localeCompare(b.ref||'9999'));
+  const act=orders.filter(o=>!isPN(o)&&!isNS(o)).sort((a,b)=>((+b.avail>0)-(+a.avail>0))||(a.ref||'9999').localeCompare(b.ref||'9999'));
   const pend=orders.filter(isPN),nos=[];
-  const seizs=orders.filter(o=>!isNS(o)).map(o=>o.seiz).filter(Boolean).sort(), minSeiz=seizs[0]||'';
+  const seizs=orders.filter(o=>!isNS(o)&&!isFin(o)).map(o=>o.seiz).filter(Boolean).sort(), minSeiz=seizs[0]||'';
   const refs=orders.filter(o=>!isNS(o)&&!isPN(o)&&+o.avail>0).map(o=>o.ref).filter(Boolean).sort();
   pend.forEach(o=>{o.auto=o.status='جرد';o.reason='لم يُجرد بعد — لا يدخل في القسمة حتى تُستكمل بياناته';o.share=0});
   const rows=act;
   rows.forEach(o=>{
     let reason='',auto;
-    if(isNS(o)){o.auto=o.status='بلاحجز';o.reason='لا يوجد حجز على الطلب — مستبعد من المحاصة';o.share=0;return}
+    if(false){o.auto=o.status='بلاحجز';o.reason='لا يوجد حجز على الطلب — مستبعد من المحاصة';o.share=0;return}
+    if(isFin(o)){o.auto=o.status='منتهي';o.reason='لا يوجد دين متبقٍ — منتهي بالتحصيل';o.share=0;return}
     if(minSeiz&&o.bond&&o.bond>minSeiz&&!(o.type==='حكم'&&o.jt==='بينات أو يمين')){auto='مستبعد';reason=R37}
     else auto=o.dt==='ممتاز'?'ممتاز':'عادي';
     o.auto=auto;o.status=auto;o.reason=reason;o.share=0;
   });
-  const inc=rows.filter(o=>o.status!=='مستبعد'&&o.status!=='بلاحجز');
+  const inc=rows.filter(o=>o.status!=='مستبعد'&&o.status!=='بلاحجز'&&o.status!=='منتهي');
   const F=orders.reduce((s,o)=>s+(+o.avail||0),0);
   const pr=inc.filter(o=>o.status==='ممتاز'),od=inc.filter(o=>o.status!=='ممتاز'),exl=rows.filter(o=>o.status==='مستبعد');
   const Dp=pr.reduce((s,o)=>s+(+o.rem||0),0);
@@ -186,7 +189,10 @@ function compute(){
     Do=od.reduce((s,o)=>s+(+o.rem||0),0);
     od.forEach(o=>o.share=Do>0?Math.min(+o.rem||0,left/Do*(+o.rem||0)):0);
     const sur=Math.max(0,left-od.reduce((s,o)=>s+o.share,0)),De=exl.reduce((s,o)=>s+(+o.rem||0),0);
-    exl.forEach(o=>{o.share=De>0?Math.min(+o.rem||0,sur/De*(+o.rem||0)):0;if(o.share>0.004)o.reason+=' — وُزّع عليه من الفائض بعد وفاء الممتاز والعادي'})}
+    const eP=exl.filter(o=>o.dt==='ممتاز'),eO=exl.filter(o=>o.dt!=='ممتاز'),DeP=eP.reduce((a,o)=>a+(+o.rem||0),0),DeO=eO.reduce((a,o)=>a+(+o.rem||0),0);
+    if(sur>=DeP){eP.forEach(o=>o.share=+o.rem||0);const r2=sur-DeP;eO.forEach(o=>o.share=DeO>0?Math.min(+o.rem||0,r2/DeO*(+o.rem||0)):0)}
+    else{eP.forEach(o=>o.share=DeP>0?sur/DeP*(+o.rem||0):0);eO.forEach(o=>o.share=0)}
+    exl.forEach(o=>{if(o.share>0.004)o.reason+=' — وُزّع عليه من الفائض (الممتاز أولاً ثم العادي)'})}
   else pr.forEach(o=>o.share=Dp>0?F/Dp*(+o.rem||0):0);
   const oldO=rows.find(o=>+o.avail>0&&o.ref&&!isNS(o));return{oldId:oldO?oldO.id:null,rows:rows.concat(pend,nos),F,left,total:orders.reduce((s,o)=>s+(+o.rem||0),0),inc:Dp+Do,ratio:(Dp+Do)>0?Math.min(1,F/(Dp+Do)):0,minRef:refs[0]||'',minSeiz:minSeiz||''};
 }
@@ -196,7 +202,7 @@ function render(){
   {const np=r.rows.filter(isPN).length,nn=r.rows.filter(isNS).length,nm=r.rows.filter(o=>!isPN(o)&&issues(o).length).length,wb=$('wb');wb.hidden=!(nm||np||nn);wb.className='warn'+(!nm&&!nn?' yl':'');wb.innerHTML=(np?`🟡 ${np} طلب غير مجرود (أسفل الجدول بالأصفر) — لا يدخل في القسمة حتى تُستكمل بياناته.<br>`:'')+(nn?`🚫 ${nn} طلب بلا حجز (مستبعد من المحاصة).<br>`:'')+(nm?`⚠️ ${nm} طلب يحتاج مراجعة أو استكمال بيانات (انظر عمود الملاحظة والخانات المظللة بالأحمر). الطلب بلا نوع دين يُحسب مؤقتاً كدين عادي.`:'')}
   $('cards').innerHTML=[['مجموع المبلغ المحصّل',fmt(r.F)],['مجموع الديون',fmt(r.total)],['الديون الداخلة في المحاصة',fmt(r.inc)],['السهم (النسبة)',(r.ratio*100).toFixed(2)+'%'],['المتبقي بعد الديون الممتازة',fmt(r.left)],['أقدم تاريخ إحالة',fh(r.minRef)],['أقدم تاريخ حجز',fh(r.minSeiz)]].map(x=>`<div class="c"><small>${x[0]}</small><b>${x[1]}</b></div>`).join('');
   if(!r.rows.length){$('tb').innerHTML='<tr><td colspan="13" class="empty">لا توجد طلبات. اضغط «إضافة طلب جديد».</td></tr>';return}
-  $('tb').innerHTML=r.rows.map((o,i)=>`<tr class="${isPN(o)?'pn':o.status==='مستبعد'||isNS(o)?'ex':'ok'}${o.id===r.oldId?' oldest':''}">
+  $('tb').innerHTML=r.rows.map((o,i)=>`<tr class="${isPN(o)?'pn':o.status==='مستبعد'||isNS(o)||isFin(o)?'ex':'ok'}${o.id===r.oldId?' oldest':''}">
 <td>${i+1}</td><td>${esc(o.no)}${o.id===r.oldId?'<span class="badge">الأقدم</span>':''}</td><td>${fh(o.ref)}</td><td>${fh(o.bond)}</td>
 <td>${esc(o.type)}${isNS(o)?'':jtSel(o)}</td><td>${isNS(o)?'لا يوجد':fh(o.seiz)}</td><td>${fmtRaw(o.rem)}</td><td>${fmtRaw(o.avail)}</td><td>${isNS(o)?'':dtSel(o)}</td>
 <td><b>${LB[o.status]}</b></td>
@@ -273,7 +279,7 @@ $('add').onclick=()=>open_();
 $('cancel').onclick=()=>$('dlg').close();
 $('save').onclick=()=>{
   const d={};F.forEach(k=>d[k]=dig($(k).value).trim());d.note=dig($('nt').value).trim();
-  d.rem=parseFloat(String(d.rem).replace(/,/g,''))||0;d.avail=parseFloat(String(d.avail).replace(/,/g,''))||0;
+  d.rem=String(d.rem).trim()===''?'':(parseFloat(String(d.rem).replace(/,/g,''))||0);d.avail=parseFloat(String(d.avail).replace(/,/g,''))||0;
   if(!d.no){$('no').focus();return}
   const er=[];
   if(d.type==='حكم'&&!d.jt)er.push('حدد نوع الحكم');
@@ -311,7 +317,7 @@ $('prt').onclick=()=>{mkMin();$('pd').textContent='تاريخ الطباعة: '+
 const AR=n=>String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);
 function mkMin(){
   const r=compute(),sec=$('mws'),np=r.rows.filter(isPN).length;
-  r.rows=r.rows.filter(o=>!isPN(o));
+  r.rows=r.rows.filter(o=>!isPN(o)).sort((a,b)=>(a.ref||'9999').localeCompare(b.ref||'9999'));
   let pn=document.getElementById('pnote');if(!pn){pn=document.createElement('div');pn.id='pnote';pn.className='warn yl';$('mn').before(pn)}
   pn.hidden=!np;pn.textContent=np?`🟡 تنبيه: ${np} طلب غير مجرود لم يدخل في المحضر ولا في القسمة. استكمل بياناته قبل نسخ المحضر.`:'';
   if(!r.rows.length){sec.hidden=!np;return}
@@ -321,8 +327,9 @@ function mkMin(){
   const ln=(k,o,tail)=>`${AR(k)}- الطلب رقم (${no(o)}): المتبقي له من الدين مبلغ وقدره (${money(+o.rem||0)}) ونصيبه من المحاصة مبلغ وقدره (${money(o.share)})${tail}.`;
   const exhausted=r.rows.some(x=>x.status==='ممتاز')&&r.left<=0.004;
   let t=`أُعد هذا المحضر من قبل وحدة العمليات المالية بمحكمة التنفيذ المركزية، لقسمة ${src}.\n\nوبناءً على المادة رقم 36 من لائحة التنفيذ تمت قسمة حصيلة التنفيذ بين الدائنين على النحو التالي:\n`;
-  t+=r.rows.map((o,i)=>{
+  t+=r.rows.filter(o=>!(o.status==='مستبعد'&&o.share>0.004)).map((o,i)=>{
     if(isNS(o))return `${AR(i+1)}- الطلب رقم (${no(o)}): استبعد من المحاصة لعدم وجود حجز على الطلب.`;
+    if(isFin(o))return `${AR(i+1)}- الطلب رقم (${no(o)}): استبعد من المحاصة لانتهائه بالتحصيل وعدم وجود دين متبقٍ له.`;
     if(o.status==='مستبعد')return `${AR(i+1)}- الطلب رقم (${no(o)}): استبعد من المحاصة بناءً على المادة 37 من لائحة التنفيذ.`;
     if(o.status!=='ممتاز'&&o.share<=0.004&&exhausted)return `${AR(i+1)}- الطلب رقم (${no(o)}): المتبقي له من الدين مبلغ وقدره (${money(+o.rem||0)}) ولم يدخل في المحاصة لوجود ديون ممتازة.`;
     return ln(i+1,o,o.status==='ممتاز'?' لكونه ديناً ممتازاً':'');
@@ -330,7 +337,8 @@ function mkMin(){
   const sx=r.rows.filter(o=>o.status==='مستبعد'&&o.share>0.004);
   if(sx.length){
     const full=sx.every(o=>o.share>=(+o.rem||0)-0.004);
-    t+=`\n\n${full?'ونظراً لوجود فائض يكفي بقية الديون فقد تمت قسمة المبلغ على النحو التالي:':'ونظراً لوجود فائض فقد تمت قسمة المبلغ بين بقية الديون على النحو التالي:'}\n`+sx.map((o,i)=>ln(i+1,o,'')).join('\n');
+    const exA=r.rows.filter(o=>o.status==='مستبعد'),mixed=exA.some(o=>o.dt==='ممتاز')&&exA.some(o=>o.dt!=='ممتاز'),md=mixed?' مع مراعاة تقديم الدين الممتاز على العادي':'';
+    t+=`\n\n${full?'ونظراً لوجود فائض يكفي بقية الديون فقد تمت قسمة المبلغ بين بقية الطلبات'+md+' على النحو التالي:':'ونظراً لوجود فائض فقد تمت قسمة المبلغ بين بقية الطلبات'+md+' على النحو التالي:'}\n`+sx.map((o,i)=>ln(i+1,o,'')).join('\n');
   }
   t+='\n\nوللبيان جرى إثباته، والله الموفق.';
   $('mn').textContent=AR(t.replace(/(\d),(?=\d)/g,'$1٬').replace(/(\d)\.(?=\d)/g,'$1٫'));
@@ -380,7 +388,7 @@ $('exb').onclick=doExport;$('imb').onclick=()=>$('imf').click();
 $('imf').onchange=async()=>{const f=$('imf').files[0];$('imf').value='';if(!f)return;
   try{const j=JSON.parse(await f.text());if(!Array.isArray(j.orders))throw 0;
     const D=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:'',pick=(v,a,z)=>a.includes(v)?v:z,DT=['ممتاز','عادي','مستبعد'];
-    const list=j.orders.map((o,i)=>({id:'i'+Date.now().toString(36)+i,no:dig(o.no),ref:D(o.ref),bond:D(o.bond),type:pick(o.type,['سند لأمر','شيك','حكم','أخرى'],''),jt:o.type==='حكم'?normJt(o.jt):'',seiz:D(o.seiz),rem:+o.rem||0,avail:+o.avail||0,dt:pick(o.dt,['ممتاز','عادي'],''),note:dig(o.note),...(o.noSeiz&&!D(o.seiz)?{noSeiz:1}:{})}));
+    const list=j.orders.filter(o=>!(o.noSeiz&&!o.seiz)).map((o,i)=>({id:'i'+Date.now().toString(36)+i,no:dig(o.no),ref:D(o.ref),bond:D(o.bond),type:pick(o.type,['سند لأمر','شيك','حكم','أخرى'],''),jt:o.type==='حكم'?normJt(o.jt):'',seiz:D(o.seiz),rem:(o.rem===''||o.rem==null)?'':(+o.rem||0),avail:+o.avail||0,dt:pick(o.dt,['ممتاز','عادي'],''),note:dig(o.note),...(o.noSeiz&&!D(o.seiz)?{noSeiz:1}:{})}));
     const go=()=>{orders=list;curId=null;curTitle=String(j.title||'');persist();remember();showCur();showApp();flash('تم استيراد '+list.length+' طلب')};
     if(orders.length)ask('سيتم استبدال الطلبات الحالية بالملف المستورد. متابعة؟',go,'نعم، استيراد');else go()
   }catch(e){flash('الملف غير صالح')}};
@@ -391,7 +399,7 @@ $('newm').onclick=()=>{const go=()=>{orders=[];curId=null;curTitle='';persist();
 $('back').onclick=()=>{if(orders.length)ask('سيتم الرجوع للقائمة الرئيسية. إن أردت الاحتفاظ بالمحاصة فاضغط «حفظ المحاصة» أولاً. متابعة؟',showHome,'نعم، رجوع');else showHome()};
 
 function normJt(v){const t=String(v??'');if(/مدافع|بينات|بينة|يمين/.test(t))return 'بينات أو يمين';if(/نكول|اقرار|إقرار/.test(t))return 'نكول أو إقرار';return ''}
-function missing(o){const m=[];if(isNS(o))return m;if(!o.ref)m.push('تاريخ الإحالة');if(!o.bond)m.push('تاريخ السند');if(!o.type)m.push('نوع السند');if(o.type==='حكم'&&!o.jt)m.push('نوع الحكم');if(!o.seiz)m.push('تاريخ الحجز');if(!(+o.rem>0))m.push('المبلغ المتبقي');if(!o.dt)m.push('نوع الدين');return m}
+function missing(o){const m=[];if(isNS(o))return m;if(!o.ref)m.push('تاريخ الإحالة');if(!o.bond)m.push('تاريخ السند');if(!o.type)m.push('نوع السند');if(o.type==='حكم'&&!o.jt)m.push('نوع الحكم');if(!o.seiz)m.push('تاريخ الحجز');if((o.rem===''||o.rem==null))m.push('المبلغ المتبقي');if(!o.dt)m.push('نوع الدين');return m}
 function issues(o){const l=[],m=missing(o);if(isNS(o))return l;if(m.length)l.push((o.need?'يحتاج معالجة من الدائرة — ':'')+'يلزم تعبئة: '+m.join('، '));
   if((o.bond&&o.ref&&o.bond>o.ref)||(o.ref&&o.seiz&&o.seiz<o.ref)||(o.bond&&o.seiz&&o.bond>o.seiz))l.push('ترتيب التواريخ غير صحيح (السند ثم الإحالة ثم الحجز)');return l}
 function warnHtml(o){return issues(o).map(x=>`<div class="mw">⚠️ ${x}</div>`).join('')}
@@ -455,10 +463,11 @@ async function readXlsx(file,replace){
     const no=dig(String(G(r,'no')??'').trim());if(!no)return;
     if(exist.has(no)){dup++;return}
     const type=xtype(G(r,'type')),dts={};let noS=0;
-    ['ref','bond','seiz'].forEach(k=>{const raw=G(r,k);dts[k]=pdate(raw);if(k==='seiz'&&/^[\-–—ـ‐−\s]+$/.test(String(raw))&&String(raw).trim()!==''){noS=1;return}if(raw!==''&&!dts[k])badDate++});
+    ['ref','bond','seiz'].forEach(k=>{const raw=G(r,k);dts[k]=pdate(raw);if(k==='seiz'&&/^[\-–—ـ‐‑−﹣－_\.\s\u200e\u200f\u202a-\u202e\u2066-\u2069\u00a0]+$/.test(String(raw))&&/[^\s\u200e\u200f\u202a-\u202e\u2066-\u2069\u00a0]/.test(String(raw))){noS=1;return}if(raw!==''&&!dts[k])badDate++});
+    if(noS){noSz++;return}
     const dtv=nz(G(r,'dt'));
     list.push({id:'x'+Date.now().toString(36)+i,no,ref:dts.ref,bond:dts.bond,seiz:dts.seiz,type,
-      jt:type==='حكم'?normJt(G(r,'jt')):'',rem:xnum(G(r,'rem')),avail:c.avail===undefined?0:xnum(G(r,'avail')),
+      jt:type==='حكم'?normJt(G(r,'jt')):'',rem:String(G(r,'rem')).trim()===''?'':xnum(G(r,'rem')),avail:c.avail===undefined?0:xnum(G(r,'avail')),
       dt:dtv.includes('ممتاز')?'ممتاز':dtv.includes('عادي')?'عادي':'',
       note:dig(String(G(r,'note')??'')).trim(),
       ...(noS?{noSeiz:1,seiz:''}:/نعم|yes|true/i.test(nz(G(r,'need')))?{need:1}:{})});
@@ -468,7 +477,7 @@ async function readXlsx(file,replace){
     orders=orders.concat(list);persist();remember();showCur();showApp();
     const rec=Object.keys(c).map(k=>`${XL[k]} ← «${esc(rows[hi][c[k]])}»`),unk=rows[hi].map((h,i)=>({h,i})).filter(x=>String(x.h).trim()&&!Object.values(c).includes(x.i)).map(x=>esc(x.h));
     const nf=list.filter(o=>issues(o).length).length,absent=Object.keys(XL).filter(k=>c[k]===undefined&&k!=='note'&&k!=='jt');
-    showXr(`<b>أُضيف ${list.length} طلب.</b>${dup?` (تجاهلت ${dup} طلباً رقمه موجود مسبقاً)`:''}<br>${nf?`⚠️ ${nf} طلب يحتاج مراجعة أو استكمال بيانات، وهي ظاهرة في الجدول.<br>`:''}${badDate?`⚠️ ${badDate} تاريخاً لم أستطع قراءته فتُرك فارغاً.<br>`:''}<hr><b>الأعمدة التي عرفتها:</b><br>${rec.join('<br>')}${unk.length?'<br><b>أعمدة لم أستخدمها:</b> '+unk.join('، '):''}${absent.length?'<br><b>أعمدة غير موجودة في الملف:</b> '+absent.map(k=>XL[k]).join('، ')+' (تُعبّأ يدوياً)':''}<br><b>المبلغ المتوفر:</b> يُقرأ من عمود «مجموع الإشعارات المتاحة للصرف».`);
+    showXr(`<b>أُضيف ${list.length} طلب.</b>${dup?` (تجاهلت ${dup} طلباً رقمه موجود مسبقاً)`:''}<br>${noSz?`🚫 ${noSz} طلب تاريخ الحجز فيه (-) أي لا حجز عليه، استُبعد مباشرة ولم يُضف للجدول.<br>`:''}${nf?`⚠️ ${nf} طلب يحتاج مراجعة أو استكمال بيانات، وهي ظاهرة في الجدول.<br>`:''}${badDate?`⚠️ ${badDate} تاريخاً لم أستطع قراءته فتُرك فارغاً.<br>`:''}<hr><b>الأعمدة التي عرفتها:</b><br>${rec.join('<br>')}${unk.length?'<br><b>أعمدة لم أستخدمها:</b> '+unk.join('، '):''}${absent.length?'<br><b>أعمدة غير موجودة في الملف:</b> '+absent.map(k=>XL[k]).join('، ')+' (تُعبّأ يدوياً)':''}<br><b>المبلغ المتوفر:</b> يُقرأ من عمود «مجموع الإشعارات المتاحة للصرف».`);
   };
   if(replace&&orders.length)ask('سيتم استبدال الطلبات الحالية بطلبات ملف Excel. متابعة؟',finish,'نعم، استيراد');else finish();
 }
